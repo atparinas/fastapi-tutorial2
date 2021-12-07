@@ -59,8 +59,22 @@ async def test_invalid_input_raises_error( app: FastAPI, client: AsyncClient, in
         assert res.status_code == status_code
 
 
-async def test_get_cleaning_by_id(app: FastAPI, client: AsyncClient) -> None:
-    res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=1))
+async def test_get_cleaning_by_id(app: FastAPI, client: AsyncClient, test_cleaning: CleaningInDB) -> None:
+    res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=test_cleaning.id))
     assert res.status_code == HTTP_200_OK
     cleaning = CleaningInDB(**res.json())
-    assert cleaning.id == 1
+    assert cleaning ==  test_cleaning
+
+
+
+@pytest.mark.parametrize(
+    "id, status_code",
+    (
+        (500, 404),
+        (-1, 404),
+        (None, 422),
+    ),
+)
+async def test_wrong_id_returns_error( app: FastAPI, client: AsyncClient, id: int, status_code: int ) -> None:
+    res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=id))
+    assert res.status_code == status_code
