@@ -8,7 +8,7 @@ CREATE_CLEANING_QUERY = """
     VALUES (:name, :description, :price, :cleaning_type)
 """
 
-GET_CLEANING_QUERY = """
+GET_CLEANING_BY_ID_QUERY = """
     SELECT * FROM cleanings WHERE cleanings.id = :id
 """
 
@@ -22,6 +22,12 @@ class CleaningsRepository(BaseRepository):
         cleaning_id = await self.db.execute(query=CREATE_CLEANING_QUERY, values=query_values)
 
         # Fetch the newly created back from the db
-        cleaning_from_db = await self.db.fetch_one(query=GET_CLEANING_QUERY, values={"id": cleaning_id})
+        cleaning_from_db = await self.db.fetch_one(query=GET_CLEANING_BY_ID_QUERY, values={"id": cleaning_id})
 
         return CleaningInDB(**cleaning_from_db)
+
+    async def get_cleaning_by_id(self, *, id: int) -> CleaningInDB:
+        cleaning = await self.db.fetch_one(query=GET_CLEANING_BY_ID_QUERY, values={"id": id})
+        if not cleaning:
+            return None
+        return CleaningInDB(**cleaning)
