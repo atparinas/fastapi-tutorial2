@@ -6,7 +6,8 @@ from starlette.status import (
 )
 
 from app.models.cleaning import CleaningCreate, CleaningInDB
-
+from typing import List
+from pprint import pprint
 
 # decorate all tests with @pytest.mark.asyncio
 pytestmark = pytest.mark.asyncio  
@@ -78,3 +79,59 @@ async def test_get_cleaning_by_id(app: FastAPI, client: AsyncClient, test_cleani
 async def test_wrong_id_returns_error( app: FastAPI, client: AsyncClient, id: int, status_code: int ) -> None:
     res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=id))
     assert res.status_code == status_code
+
+
+
+async def test_get_all_cleanings_returns_valid_response( app: FastAPI, client: AsyncClient, test_cleaning: CleaningInDB) -> None:
+    res = await client.get(app.url_path_for("cleanings:get-all-cleanings"))
+    assert res.status_code == HTTP_200_OK
+    assert isinstance(res.json(), list)
+    assert len(res.json()) > 0        
+    cleanings = [CleaningInDB(**l) for l in res.json()]
+    assert test_cleaning in cleanings
+
+
+
+@pytest.mark.parametrize(
+    "attrs_to_change, values",
+    (
+        (["name"], ["new fake cleaning name"]),
+        (["description"], ["new fake cleaning description"]),
+        (["price"], [3.14]),
+        (["cleaning_type"], ["full_clean"]),            
+        (
+            ["name", "description"], 
+            [
+                "extra new fake cleaning name", 
+                "extra new fake cleaning description",
+            ],
+        ),
+        (["price", "cleaning_type"], [42.00, "dust_up"]),
+    ),
+)
+async def test_update_cleaning_with_valid_input( app: FastAPI,  client: AsyncClient,  test_cleaning: CleaningInDB, 
+    attrs_to_change: List[str],  values: List[str], ) -> None:
+
+    cleaning_update = {
+        "cleaning_update": {
+            attrs_to_change[i]: values[i] for i in range(len(attrs_to_change))
+        }
+    }
+    res = await client.put( app.url_path_for( "cleanings:update-cleaning-by-id",  id=test_cleaning.id, ),
+        json=cleaning_update
+    )
+    assert res.status_code == HTTP_200_OK
+    updated_cleaning = CleaningInDB(**res.json())
+
+    assert updated_cleaning.id == test_cleaning.id  # make sure it's the same cleaning
+
+    # make sure that any attribute we updated has changed to the correct value
+    for i in range(len(attrs_to_change)):
+        attr_to_change = getattr(updated_cleaning, attrs_to_change[i])
+        assert attr_to_change != getattr(test_cleaning, attrs_to_change[i])
+        assert attr_to_change == values[i] 
+
+    # make sure that no other attributes' values have changed
+    for attr, value in updated_cleaning.dict().items():
+        if attr not in attrs_to_change:
+            assert getattr(test_cleaning, attr) == value
