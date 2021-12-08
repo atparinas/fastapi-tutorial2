@@ -52,19 +52,21 @@ def create_users_table() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("username", sa.Text, unique=True, nullable=False, index=True),        
-        sa.Column("email", sa.Text, unique=True, nullable=False, index=True),
-        sa.Column("email_verified", sa.Boolean, nullable=False, server_default="False"),
-        sa.Column("salt", sa.Text, nullable=False),
-        sa.Column("password", sa.Text, nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="True"),
-        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default="False"),     
+        sa.Column("username", sa.String(50), unique=True, nullable=False, index=True),        
+        sa.Column("email", sa.String(255), unique=True, nullable=False, index=True),
+        sa.Column("email_verified", sa.Boolean, nullable=False, server_default=sa.false()),
+        sa.Column("salt", sa.String(255), nullable=False),
+        sa.Column("password", sa.String(50), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.true()),     
         *timestamps(),
     )
 
 
 def upgrade() -> None:
     create_cleanings_table()
+    create_users_table()
 
 def downgrade() -> None:
     op.drop_table("cleanings")
+    op.drop_table("users")
