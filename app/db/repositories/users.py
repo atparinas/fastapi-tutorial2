@@ -1,7 +1,8 @@
 from app.db.repositories.base import BaseRepository
 from app.models.user import UserCreate, UserUpdate, UserInDB
 from pydantic import EmailStr
-
+from fastapi import status, HTTPException
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 
 GET_USER_BY_EMAIL_QUERY = """
     SELECT id, username, email, email_verified, password, salt, is_active, is_superuser, created_at, updated_at
@@ -15,17 +16,50 @@ GET_USER_BY_USERNAME_QUERY = """
     WHERE username = :username;
 """
 
+GET_USER_BY_ID_QUERY = """
+    SELECT id, username, email, email_verified, password, salt, is_active, is_superuser, created_at, updated_at
+    FROM users
+    WHERE id = :id;
+"""
+
 REGISTER_NEW_USER_QUERY = """
     INSERT INTO users (username, email, password, salt)
-    VALUES (:username, :email, :password, :salt)
-    RETURNING id, username, email, email_verified, password, salt, is_active, is_superuser, created_at, updated_at;
+    VALUES (:username, :email, :password, :salt);
 """
 
 
 class UsersRepository(BaseRepository):
 
     async def register_new_user(self, *, new_user: UserCreate) -> UserInDB:
-        return None
+
+        # make sure email isn't already taken
+        if await self.get_user_by_email(email=new_user.email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That email is already taken. Login with that email or register with another one."
+            )
+
+        # make sure username isn't already taken
+        if await self.get_user_by_username(username=new_user.username):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That username is already taken. Please try another one."                
+            )
+
+        try:
+
+            new_user_id = await self.db.execute(query=REGISTER_NEW_USER_QUERY, values={**new_user.dict(), "salt": "123"})
+
+        except Exception as e:
+            print(e)
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Invalid User params.",
+            )
+
+        created_user = await self.db.fetch_one(query=GET_USER_BY_ID_QUERY, values={'id': new_user_id})
+
+        return UserInDB(**created_user)
 
     async def get_user_by_email(self, *, email: EmailStr) -> UserInDB:
 
@@ -33,7 +67,7 @@ class UsersRepository(BaseRepository):
 
         if not user_record:
             return None
-            
+
         return UserInDB(**user_record)
 
     async def get_user_by_username(self, *, username: str) -> UserInDB:

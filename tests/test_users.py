@@ -49,3 +49,27 @@ async def test_users_can_register_successfully(app: FastAPI, client: AsyncClient
     # check that the user returned in the response is equal to the user in the database
     created_user = UserInDB(**res.json(), password="whatever", salt="123").dict(exclude={"password", "salt"})
     assert created_user == user_in_db.dict(exclude={"password", "salt"})
+
+@pytest.mark.parametrize(
+    "attr, value, status_code",
+    (
+        ("email", "shakira@shakira.io", 201),
+        ("email", "shakira@shakira.io", 400),
+        ("username", "shakirashakira", 201),            
+        ("username", "shakirashakira", 400),
+        ("email", "invalid_email@one@two.io", 422),
+        ("password", "short", 422),
+        ("username", "shakira@#$%^<>", 422),
+        ("username", "ab", 422),
+    )
+)
+async def test_user_registration_fails_when_credentials_are_taken(
+    app: FastAPI,  client: AsyncClient, db: Database,
+    attr: str, value: str, status_code: int,
+) -> None: 
+
+    new_user = {"email": "nottaken@email.io", "username": "not_taken_username", "password": "freepassword"}
+    new_user[attr] = value
+
+    res = await client.post(app.url_path_for("users:register-new-user"), json={"new_user": new_user})
+    assert res.status_code == status_code
