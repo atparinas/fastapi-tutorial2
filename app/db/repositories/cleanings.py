@@ -2,7 +2,7 @@ from typing import Any, List
 from app.db.repositories.base import BaseRepository
 from app.models.cleaning import CleaningCreate, CleaningUpdate, CleaningInDB
 from fastapi import HTTPException
-from starlette.status import HTTP_400_BAD_REQUEST
+from starlette.status import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 
 from pprint import pprint
 
@@ -30,10 +30,18 @@ UPDATE_CLEANING_BY_ID_QUERY = """
     WHERE id = :id; 
 """
 
+DELETE_CLEANING_BY_ID_QUERY = """
+    DELETE FROM cleanings  
+    WHERE id = :id;
+""" 
 
 class CleaningsRepository(BaseRepository):
     """"
     All database actions associated with the Cleaning resource
+    """
+
+    """
+    CREATE
     """
     async def create_cleaning(self, *, new_cleaning: CleaningCreate) -> CleaningInDB:
         query_values = new_cleaning.dict()
@@ -45,6 +53,9 @@ class CleaningsRepository(BaseRepository):
 
         # return CleaningInDB(**cleaning_from_db)
 
+    """
+    SHOW
+    """
     async def get_cleaning_by_id(self, *, id: int) -> CleaningInDB:
         cleaning = await self.db.fetch_one(query=GET_CLEANING_BY_ID_QUERY, values={"id": id})
         if not cleaning:
@@ -52,6 +63,9 @@ class CleaningsRepository(BaseRepository):
         return CleaningInDB(**cleaning)
 
 
+    """
+    LIST
+    """
     async def get_all_cleanings(self) -> List[CleaningInDB]:
         cleaning_records = await self.db.fetch_all(
             query=GET_ALL_CLEANINGS_QUERY,
@@ -59,6 +73,9 @@ class CleaningsRepository(BaseRepository):
         return [CleaningInDB(**l) for l in cleaning_records]
 
 
+    """
+    UPDATE
+    """
     async def update_cleaning( self, *, id: int, cleaning_update: CleaningUpdate, ) -> CleaningInDB:
 
         cleaning = await self.get_cleaning_by_id(id=id)
@@ -90,3 +107,28 @@ class CleaningsRepository(BaseRepository):
                 status_code=HTTP_400_BAD_REQUEST, 
                 detail="Invalid update params.",
             )
+
+
+    """
+    DELETE
+    """
+    async def delete_cleaning_by_id(self, *, id: int) -> int:
+
+        cleaning = await self.get_cleaning_by_id(id=id) 
+
+        if not cleaning:
+            return None
+
+        try:
+
+            await self.db.execute( query=DELETE_CLEANING_BY_ID_QUERY, values={"id": id}, )
+
+        except Exception as e:
+            print(e)
+            raise HTTPException(
+                status_code=HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail="Error Deleting Object",
+            )
+
+
+        return id

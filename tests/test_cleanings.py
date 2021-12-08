@@ -135,3 +135,72 @@ async def test_update_cleaning_with_valid_input( app: FastAPI,  client: AsyncCli
     for attr, value in updated_cleaning.dict().items():
         if attr not in attrs_to_change:
             assert getattr(test_cleaning, attr) == value
+
+
+
+
+@pytest.mark.parametrize(
+        "id, payload, status_code",
+        (
+            (-1, {"name": "test"}, 422),
+            (0, {"name": "test2"}, 422),
+            (500, {"name": "test3"}, 404),
+            (1, None, 422),
+            (1, {"cleaning_type": "invalid cleaning type"}, 422),
+            (1, {"cleaning_type": None}, 400),
+        ),
+)
+async def test_update_cleaning_with_invalid_input_throws_error( app: FastAPI, client: AsyncClient, 
+    id: int, payload: dict, status_code: int,) -> None:
+
+    cleaning_update = {"cleaning_update": payload}
+
+    res = await client.put(
+        app.url_path_for("cleanings:update-cleaning-by-id", id=id),
+        json=cleaning_update
+    )
+
+    assert res.status_code == status_code
+
+
+
+async def test_can_delete_cleaning_successfully(
+    app: FastAPI,
+    client: AsyncClient,
+    test_cleaning: CleaningInDB,
+) -> None:
+    # delete the cleaning
+    res = await client.delete(
+        app.url_path_for(
+            "cleanings:delete-cleaning-by-id", 
+            id=test_cleaning.id,
+        ),
+    )
+    assert res.status_code == HTTP_200_OK
+
+    # ensure that the cleaning no longer exists
+    res = await client.get( app.url_path_for( "cleanings:get-cleaning-by-id",  id=test_cleaning.id, ), )
+    assert res.status_code == HTTP_404_NOT_FOUND
+
+
+
+@pytest.mark.parametrize(
+        "id, status_code",
+        (
+            (500, 404),
+            (0, 422),
+            (-1, 422),
+            (None, 422),
+        ),
+    )
+async def test_delete_cleaning_with_invalid_input_throws_error(
+    app: FastAPI,
+    client: AsyncClient,
+    test_cleaning: CleaningInDB,
+    id: int,
+    status_code: int,
+) -> None:
+    res = await client.delete(
+        app.url_path_for("cleanings:delete-cleaning-by-id", id=id),
+    )
+    assert res.status_code == status_code  
