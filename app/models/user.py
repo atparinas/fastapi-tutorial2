@@ -42,6 +42,7 @@ class UserUpdate(CoreModel):
     """
     email: Optional[EmailStr]
     username: Optional[str]
+    
     @validator("username", pre=True)
     def username_is_valid(cls, username: str) -> str:
         return validate_username(username)

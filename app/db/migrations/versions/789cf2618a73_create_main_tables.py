@@ -56,7 +56,7 @@ def create_users_table() -> None:
         sa.Column("email", sa.String(255), unique=True, nullable=False, index=True),
         sa.Column("email_verified", sa.Boolean, nullable=False, server_default=sa.false()),
         sa.Column("salt", sa.String(255), nullable=False),
-        sa.Column("password", sa.String(50), nullable=False),
+        sa.Column("password", sa.Text, nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.true()),     
         *timestamps(),
