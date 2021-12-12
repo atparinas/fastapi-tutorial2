@@ -2,7 +2,7 @@ import pytest
 import jwt
 from typing import List, Union, Type, Optional
 from httpx import AsyncClient
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from databases import Database
 from app.db.repositories.users import UsersRepository
@@ -23,7 +23,7 @@ from starlette.datastructures import Secret
 from app.core.config import SECRET_KEY, JWT_ALGORITHM, JWT_AUDIENCE, JWT_TOKEN_PREFIX, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.models.token import JWTMeta, JWTCreds, JWTPayload
 
-from app.models.user import UserCreate, UserInDB
+from app.models.user import UserCreate, UserInDB, UserPublic
 from app.services import auth_service
 
 
@@ -195,3 +195,89 @@ async def test_user_can_login_successfully_and_receives_valid_token( app: FastAP
         # check that token is proper type
         assert "token_type" in res.json()
         assert res.json().get("token_type") == "bearer"
+
+
+
+@pytest.mark.parametrize(
+    "credential, wrong_value, status_code",
+    (
+        ("email", "wrong@email.com", 401),
+        ("email", None, 422),
+        ("email", "notemail", 401),
+        ("password", "wrongpassword", 401),
+        ("password", None, 422),
+    ),
+)
+async def test_user_with_wrong_creds_doesnt_receive_token(app: FastAPI, client: AsyncClient,test_user: UserInDB,
+        credential: str,wrong_value: str,status_code: int,) -> None:
+
+        client.headers["content-type"] = "application/x-www-form-urlencoded"
+        user_data = test_user.dict()
+        user_data["password"] = "heatcavslakers"  # insert user's plaintext password
+        user_data[credential] = wrong_value
+
+        login_data = {
+            "username": user_data["email"],
+            "password": user_data["password"],  # insert password from parameters
+        }
+        
+        res = await client.post(app.url_path_for("users:login-email-and-password"), data=login_data)
+        assert res.status_code == status_code
+        assert "access_token" not in res.json()
+
+
+
+async def test_can_retrieve_username_from_token(app: FastAPI, client: AsyncClient, test_user: UserInDB) -> None:
+
+        token = auth_service.create_access_token_for_user(user=test_user, secret_key=str(SECRET_KEY))
+        username = auth_service.get_username_from_token(token=token, secret_key=str(SECRET_KEY))
+        assert username == test_user.username
+
+
+
+@pytest.mark.parametrize(
+        "secret, wrong_token",
+        (
+            (SECRET_KEY, "asdf"),  # use wrong token
+            (SECRET_KEY, ""),  # use wrong token
+            (SECRET_KEY, None),  # use wrong token
+            ("ABC123", "use correct token"),  # use wrong secret
+        ),
+    )
+async def test_error_when_token_or_secret_is_wrong( app: FastAPI, client: AsyncClient,
+        test_user: UserInDB, secret: Union[Secret, str], wrong_token: Optional[str], ) -> None:
+
+        token = auth_service.create_access_token_for_user(user=test_user, secret_key=str(SECRET_KEY))
+        if wrong_token == "use correct token":
+            wrong_token = token
+        with pytest.raises(HTTPException):
+            username = auth_service.get_username_from_token(token=wrong_token, secret_key=str(secret))    
+
+
+async def test_authenticated_user_can_retrieve_own_data( app: FastAPI, authorized_client: AsyncClient, 
+        test_user: UserInDB, ) -> None:
+
+        res = await authorized_client.get(app.url_path_for("users:get-current-user"))
+        assert res.status_code == HTTP_200_OK
+        user = UserPublic(**res.json())
+        assert user.email == test_user.email
+        assert user.username == test_user.username
+        assert user.id == test_user.id
+
+
+async def test_user_cannot_access_own_data_if_not_authenticated(  app: FastAPI, client: AsyncClient, test_user: UserInDB,) -> None:
+
+        res = await client.get(app.url_path_for("users:get-current-user"))
+        assert res.status_code == HTTP_401_UNAUTHORIZED
+
+
+
+@pytest.mark.parametrize("jwt_prefix", (("",), ("value",), ("Token",), ("JWT",), ("Swearer",),))
+async def test_user_cannot_access_own_data_with_incorrect_jwt_prefix( app: FastAPI, client: AsyncClient, 
+        test_user: UserInDB, jwt_prefix: str,) -> None:
+        
+        token = auth_service.create_access_token_for_user(user=test_user, secret_key=str(SECRET_KEY))
+        res = await client.get(
+            app.url_path_for("users:get-current-user"), headers={"Authorization": f"{jwt_prefix} {token}"}
+        )
+        assert res.status_code == HTTP_401_UNAUTHORIZED
