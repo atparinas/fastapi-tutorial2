@@ -1,3 +1,4 @@
+from typing import Optional
 from databases import Database
 from app.db.repositories.base import BaseRepository
 from app.models.user import UserCreate, UserUpdate, UserInDB
@@ -98,3 +99,17 @@ class UsersRepository(BaseRepository):
         if not user_record:
             return None
         return UserInDB(**user_record)
+
+
+    """
+    AUTHENTICATE USER
+    """
+    async def authenticate_user(self, *, email: EmailStr, password: str) -> Optional[UserInDB]:
+        # make user user exists in db
+        user = await self.get_user_by_email(email=email)
+        if not user:
+            return None
+        # if submitted password doesn't match
+        if not self.auth_service.verify_password(password=password, salt=user.salt, hashed_pw=user.password):
+            return None
+        return user

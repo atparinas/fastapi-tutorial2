@@ -19,3 +19,13 @@ DATABASE_URL = config(
   cast=DatabaseURL,
   default=f"mysql://{DATABASE_USER}:{DATABASE_PASSWORD}@{DATABASE_SERVER}:{DATABASE_PORT}/{DATABASE_DB}"
 )
+
+SECRET_KEY = config("SECRET_KEY", cast=Secret)
+ACCESS_TOKEN_EXPIRE_MINUTES = config(
+    "ACCESS_TOKEN_EXPIRE_MINUTES",
+    cast=int,
+    default=7 * 24 * 60  # one week
+)
+JWT_ALGORITHM = config("JWT_ALGORITHM", cast=str, default="HS256")
+JWT_AUDIENCE = config("JWT_AUDIENCE", cast=str, default="phresh:auth")
+JWT_TOKEN_PREFIX = config("JWT_TOKEN_PREFIX", cast=str, default="Bearer")
