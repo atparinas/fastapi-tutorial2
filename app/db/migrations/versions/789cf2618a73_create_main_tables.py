@@ -63,10 +63,25 @@ def create_users_table() -> None:
     )
 
 
+
+def create_profiles_table() -> None:
+    op.create_table(
+        "profiles",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("full_name", sa.Text, nullable=True),
+        sa.Column("phone_number", sa.Text, nullable=True),
+        sa.Column("bio", sa.Text, nullable=True),
+        sa.Column("image", sa.Text, nullable=True),
+        sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id", ondelete="CASCADE")),
+        *timestamps(),
+    )
+
 def upgrade() -> None:
     create_cleanings_table()
     create_users_table()
+    create_profiles_table()
 
 def downgrade() -> None:
+    op.drop_table("profiles")
     op.drop_table("cleanings")
     op.drop_table("users")

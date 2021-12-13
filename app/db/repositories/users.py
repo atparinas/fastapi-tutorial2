@@ -6,6 +6,9 @@ from pydantic import EmailStr
 from fastapi import status, HTTPException
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 
+from app.db.repositories.profiles import ProfilesRepository
+from app.models.profile import ProfileCreate
+
 from app.services import auth_service
 
 GET_USER_BY_EMAIL_QUERY = """
@@ -38,6 +41,7 @@ class UsersRepository(BaseRepository):
     def __init__(self, db: Database) -> None:
         super().__init__(db)
         self.auth_service = auth_service
+        self.profiles_repo = ProfilesRepository(db)  
 
 
     """
@@ -73,6 +77,7 @@ class UsersRepository(BaseRepository):
             )
 
         created_user = await self.db.fetch_one(query=GET_USER_BY_ID_QUERY, values={'id': new_user_id})
+        await self.profiles_repo.create_profile_for_user(profile_create=ProfileCreate(user_id=created_user["id"]))
 
         return UserInDB(**created_user)
 
