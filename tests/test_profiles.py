@@ -38,4 +38,16 @@ async def test_profile_created_for_new_users(app: FastAPI, client: AsyncClient, 
     user_profile = await profiles_repo.get_profile_by_user_id(user_id=created_user.id)
 
     assert user_profile is not None
-    assert isinstance(user_profile, ProfileInDB)   
+    assert isinstance(user_profile, ProfileInDB)
+
+
+async def test_authenticated_user_can_view_other_users_profile( app: FastAPI, authorized_client: AsyncClient, 
+    test_user: UserInDB, test_user2: UserInDB) -> None:
+
+        res = await authorized_client.get(
+            app.url_path_for("profiles:get-profile-by-username", username=test_user2.username)
+        )
+        
+        assert res.status_code == status.HTTP_200_OK
+        profile = ProfilePublic(**res.json())
+        assert profile.username == test_user2.username    
