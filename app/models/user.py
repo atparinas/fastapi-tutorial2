@@ -2,7 +2,8 @@ import string
 from typing import Optional
 from pydantic import EmailStr, constr, validator
 from app.models.core import DateTimeModelMixin, IDModelMixin, CoreModel
-
+from app.models.profile import ProfilePublic
+from app.models.token import AccessToken
 
 # simple check for valid username
 def validate_username(username: str) -> str:
@@ -65,4 +66,5 @@ class UserInDB(IDModelMixin, DateTimeModelMixin, UserBase):
 
 
 class UserPublic(IDModelMixin, DateTimeModelMixin, UserBase):
-    pass
+    access_token: Optional[AccessToken]
+    profile: Optional[ProfilePublic]

@@ -1,7 +1,7 @@
 from typing import Optional
 from databases import Database
 from app.db.repositories.base import BaseRepository
-from app.models.user import UserCreate, UserUpdate, UserInDB
+from app.models.user import UserCreate, UserUpdate, UserInDB, UserPublic
 from pydantic import EmailStr
 from fastapi import status, HTTPException
 from starlette.status import HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
@@ -77,33 +77,45 @@ class UsersRepository(BaseRepository):
             )
 
         created_user = await self.db.fetch_one(query=GET_USER_BY_ID_QUERY, values={'id': new_user_id})
-        await self.profiles_repo.create_profile_for_user(profile_create=ProfileCreate(user_id=created_user["id"]))
+        await self.profiles_repo.create_profile_for_user(
+            profile_create=ProfileCreate(user_id=created_user["id"])
+        )
 
-        return UserInDB(**created_user)
+        # return UserInDB(**created_user)
+        return await self.populate_user(user=UserInDB(**created_user))
 
 
 
     """
     GET USER BY EMAIL
     """
-    async def get_user_by_email(self, *, email: EmailStr) -> UserInDB:
+    async def get_user_by_email(self, *, email: EmailStr, populate: bool = True) -> UserInDB:
 
         user_record = await self.db.fetch_one(query=GET_USER_BY_EMAIL_QUERY, values={"email": email})
 
-        if not user_record:
-            return None
+        if user_record:
+            user = UserInDB(**user_record)
+            
+            if populate:
+                return await self.populate_user(user=user)
 
-        return UserInDB(**user_record)
+            return user
 
 
     """
     GET USER BY USERNAME
     """
-    async def get_user_by_username(self, *, username: str) -> UserInDB:
+    async def get_user_by_username(self, *, username: str, populate: bool = True) -> UserInDB:
+
         user_record = await self.db.fetch_one(query=GET_USER_BY_USERNAME_QUERY, values={"username": username})
-        if not user_record:
-            return None
-        return UserInDB(**user_record)
+
+        if user_record:
+            user = UserInDB(**user_record)
+
+            if populate:
+                return await self.populate_user(user=user)
+
+            return user
 
 
     """
@@ -111,10 +123,21 @@ class UsersRepository(BaseRepository):
     """
     async def authenticate_user(self, *, email: EmailStr, password: str) -> Optional[UserInDB]:
         # make user user exists in db
-        user = await self.get_user_by_email(email=email)
+        user = await self.get_user_by_email(email=email, populate=False)
+        
         if not user:
             return None
         # if submitted password doesn't match
         if not self.auth_service.verify_password(password=password, salt=user.salt, hashed_pw=user.password):
             return None
         return user
+
+
+    async def populate_user(self, *, user: UserInDB) -> UserInDB:
+        return UserPublic(
+            # unpack the user in db dict into the UserPublic model
+            # which will remove "password" and "salt"
+            **user.dict(),
+            # fetch the user's profile from the profiles repo
+            profile=await self.profiles_repo.get_profile_by_user_id(user_id=user.id)
+        )

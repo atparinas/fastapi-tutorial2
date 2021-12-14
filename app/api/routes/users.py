@@ -24,7 +24,12 @@ user_repo: UsersRepository = Depends(get_repository(UsersRepository)),
 
     created_user = await user_repo.register_new_user(new_user=new_user)
 
-    return created_user
+    access_token = AccessToken(
+        access_token=auth_service.create_access_token_for_user(user=created_user), token_type="bearer"
+    )
+    
+    return created_user.copy(update={"access_token": access_token})
+
 
 
 @router.post("/login/token/", response_model=AccessToken, name="users:login-email-and-password")
