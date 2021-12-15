@@ -1,13 +1,18 @@
 import pytest
+from typing import List
+from pprint import pprint
+
 from httpx import AsyncClient
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from starlette.status import (
     HTTP_200_OK, HTTP_201_CREATED, HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
 )
 
-from app.models.cleaning import CleaningCreate, CleaningInDB
-from typing import List
-from pprint import pprint
+from databases import Database
+
+from app.models.cleaning import CleaningCreate, CleaningInDB, CleaningPublic
+from app.models.user import UserInDB
+from app.db.repositories.cleanings import CleaningsRepository
 
 # decorate all tests with @pytest.mark.asyncio
 pytestmark = pytest.mark.asyncio  
@@ -21,26 +26,57 @@ def new_cleaning():
         cleaning_type="spot_clean",
     )
 
+@pytest.fixture
+async def test_cleanings_list(db: Database, test_user2: UserInDB) -> List[CleaningInDB]:
+    cleaning_repo = CleaningsRepository(db)
+    return [
+        await cleaning_repo.create_cleaning(
+            new_cleaning=CleaningCreate(
+                name=f"test cleaning {i}", description="test description", price=20.00, cleaning_type="full_clean"
+            ),
+            requesting_user=test_user2,
+        )
+        for i in range(5)
+    ]
 
 # @pytest.mark.asyncio
-async def test_routes_exist(app: FastAPI, client: AsyncClient) -> None:
+async def test_cleaning_routes_exist(app: FastAPI, client: AsyncClient, test_cleanings_list: List[CleaningInDB]) -> None:
+    
     res = await client.post(app.url_path_for("cleanings:create-cleaning"), json={})
-    assert res.status_code != HTTP_404_NOT_FOUND
+    assert res.status_code != status.HTTP_404_NOT_FOUND
+    res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=1))
+    assert res.status_code != status.HTTP_404_NOT_FOUND
+    res = await client.get(app.url_path_for("cleanings:list-all-user-cleanings"))
+    assert res.status_code != status.HTTP_404_NOT_FOUND
+    res = await client.put(app.url_path_for("cleanings:update-cleaning-by-id", id=1))
+    assert res.status_code != status.HTTP_404_NOT_FOUND
+    res = await client.delete(app.url_path_for("cleanings:delete-cleaning-by-id", id=0))
+    assert res.status_code != status.HTTP_404_NOT_FOUND
 
 
-# @pytest.mark.asyncio
-async def test_invalid_input_raises_error(app: FastAPI, client: AsyncClient) -> None:
-    res = await client.post(app.url_path_for("cleanings:create-cleaning"), json={})
-    assert res.status_code == HTTP_422_UNPROCESSABLE_ENTITY
 
+async def test_unauthorized_user_unable_to_create_cleaning( app: FastAPI, client: AsyncClient, new_cleaning: CleaningCreate) -> None:
 
-async def test_valid_input_creates_cleaning(app: FastAPI, client: AsyncClient, new_cleaning: CleaningCreate ) -> None:
     res = await client.post(
         app.url_path_for("cleanings:create-cleaning"), json={"new_cleaning": new_cleaning.dict()}
     )
-    assert res.status_code == HTTP_201_CREATED
-    created_cleaning = CleaningCreate(**res.json())
-    assert created_cleaning == new_cleaning
+
+    assert res.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+
+async def test_valid_input_creates_cleaning_belonging_to_user(app: FastAPI, authorized_client: AsyncClient,
+    test_user: UserInDB,
+    new_cleaning: CleaningCreate ) -> None:
+    res = await authorized_client.post(
+        app.url_path_for("cleanings:create-cleaning"), json={"new_cleaning": new_cleaning.dict()}
+    )
+    assert res.status_code == status.HTTP_201_CREATED
+    created_cleaning = CleaningPublic(**res.json())
+    assert created_cleaning.name == new_cleaning.name
+    assert created_cleaning.price == new_cleaning.price
+    assert created_cleaning.cleaning_type == new_cleaning.cleaning_type
+    assert created_cleaning.owner == test_user.id
 
 
 @pytest.mark.parametrize(
@@ -53,15 +89,15 @@ async def test_valid_input_creates_cleaning(app: FastAPI, client: AsyncClient, n
         ({"name": "test_name", "description": "test"}, 422),
     ),
 )
-async def test_invalid_input_raises_error( app: FastAPI, client: AsyncClient, invalid_payload: dict, status_code: int ) -> None:
-        res = await client.post(
+async def test_invalid_input_raises_error( app: FastAPI, authorized_client: AsyncClient, invalid_payload: dict, status_code: int ) -> None:
+        res = await authorized_client.post(
             app.url_path_for("cleanings:create-cleaning"), json={"new_cleaning": invalid_payload}
         )
         assert res.status_code == status_code
 
 
-async def test_get_cleaning_by_id(app: FastAPI, client: AsyncClient, test_cleaning: CleaningInDB) -> None:
-    res = await client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=test_cleaning.id))
+async def test_get_cleaning_by_id(app: FastAPI, authorized_client: AsyncClient, test_cleaning: CleaningInDB) -> None:
+    res = await authorized_client.get(app.url_path_for("cleanings:get-cleaning-by-id", id=test_cleaning.id))
     assert res.status_code == HTTP_200_OK
     cleaning = CleaningInDB(**res.json())
     assert cleaning ==  test_cleaning
@@ -82,61 +118,67 @@ async def test_wrong_id_returns_error( app: FastAPI, client: AsyncClient, id: in
 
 
 
-async def test_get_all_cleanings_returns_valid_response( app: FastAPI, client: AsyncClient, test_cleaning: CleaningInDB) -> None:
-    res = await client.get(app.url_path_for("cleanings:get-all-cleanings"))
-    assert res.status_code == HTTP_200_OK
+async def test_get_all_cleanings_returns_only_user_owned_cleanings( 
+    app: FastAPI, 
+    authorized_client: AsyncClient, 
+    test_user: UserInDB,   
+    test_cleaning: CleaningInDB,
+    db: Database,
+    test_cleanings_list: List[CleaningInDB],
+) -> None:
+
+    res = await authorized_client.get(app.url_path_for("cleanings:list-all-user-cleanings"))
+    assert res.status_code == status.HTTP_200_OK
     assert isinstance(res.json(), list)
-    assert len(res.json()) > 0        
+    assert len(res.json()) > 0
     cleanings = [CleaningInDB(**l) for l in res.json()]
+    # check that a cleaning created by our user is returned
     assert test_cleaning in cleanings
+    # test that all cleanings returned are owned by this user
+    for cleaning in cleanings:
+        assert cleaning.owner == test_user.id
+    # assert all cleanings created by another user not included (redundant, but fine)
+    assert all(c not in cleanings for c in test_cleanings_list)
 
 
 
 @pytest.mark.parametrize(
-    "attrs_to_change, values",
-    (
-        (["name"], ["new fake cleaning name"]),
-        (["description"], ["new fake cleaning description"]),
-        (["price"], [3.14]),
-        (["cleaning_type"], ["full_clean"]),            
+        "attrs_to_change, values",
         (
-            ["name", "description"], 
-            [
-                "extra new fake cleaning name", 
-                "extra new fake cleaning description",
-            ],
+            (["name"], ["new fake cleaning name"]),
+            # (["description"], ["new fake cleaning description"]),
+            # (["price"], [3.14]),
+            # (["cleaning_type"], ["full_clean"]),
+            # (["name", "description"], ["extra new fake cleaning name", "extra new fake cleaning description"]),
+            # (["price", "cleaning_type"], [42.00, "dust_up"]),
         ),
-        (["price", "cleaning_type"], [42.00, "dust_up"]),
-    ),
-)
-async def test_update_cleaning_with_valid_input( app: FastAPI,  client: AsyncClient,  test_cleaning: CleaningInDB, 
-    attrs_to_change: List[str],  values: List[str], ) -> None:
-
-    cleaning_update = {
-        "cleaning_update": {
-            attrs_to_change[i]: values[i] for i in range(len(attrs_to_change))
-        }
-    }
-    res = await client.put( app.url_path_for( "cleanings:update-cleaning-by-id",  id=test_cleaning.id, ),
-        json=cleaning_update
     )
-    assert res.status_code == HTTP_200_OK
-    updated_cleaning = CleaningInDB(**res.json())
+async def test_update_cleaning_with_valid_input(
+        app: FastAPI,
+        authorized_client: AsyncClient,
+        test_cleaning: CleaningInDB,
+        attrs_to_change: List[str],
+        values: List[str],
+    ) -> None:
 
-    assert updated_cleaning.id == test_cleaning.id  # make sure it's the same cleaning
+        cleaning_update = {"cleaning_update": {attrs_to_change[i]: values[i] for i in range(len(attrs_to_change))}}
 
-    # make sure that any attribute we updated has changed to the correct value
-    for i in range(len(attrs_to_change)):
-        attr_to_change = getattr(updated_cleaning, attrs_to_change[i])
-        assert attr_to_change != getattr(test_cleaning, attrs_to_change[i])
-        assert attr_to_change == values[i] 
+        res = await authorized_client.put(
+            app.url_path_for("cleanings:update-cleaning-by-id", id=test_cleaning.id), json=cleaning_update
+        )
+        assert res.status_code == status.HTTP_200_OK
 
-    # make sure that no other attributes' values have changed
-    for attr, value in updated_cleaning.dict().items():
-        if attr not in attrs_to_change:
-            assert getattr(test_cleaning, attr) == value
+        updated_cleaning = CleaningInDB(**res.json())
+        assert updated_cleaning.id == test_cleaning.id  # make sure it's the same cleaning
 
-
+        # make sure that any attribute we updated has changed to the correct value
+        for i in range(len(attrs_to_change)):
+            assert getattr(updated_cleaning, attrs_to_change[i]) != getattr(test_cleaning, attrs_to_change[i])
+            assert getattr(updated_cleaning, attrs_to_change[i]) == values[i]
+        # make sure that no other attributes' values have changed
+        for attr, value in updated_cleaning.dict().items():
+            if attr not in attrs_to_change and attr != "updated_at":
+                assert getattr(test_cleaning, attr) == value
 
 
 @pytest.mark.parametrize(

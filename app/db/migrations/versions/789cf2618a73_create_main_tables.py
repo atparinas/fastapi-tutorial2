@@ -44,6 +44,7 @@ def create_cleanings_table() -> None:
         sa.Column("description", sa.String(1000), nullable=True),
         sa.Column("cleaning_type", sa.String(255), nullable=False, server_default="spot_clean"),
         sa.Column("price", sa.Numeric(10, 2), nullable=False),
+        sa.Column("owner", sa.Integer, sa.ForeignKey("users.id", ondelete="CASCADE")),
         *timestamps()
     )
 
@@ -77,9 +78,11 @@ def create_profiles_table() -> None:
     )
 
 def upgrade() -> None:
-    create_cleanings_table()
     create_users_table()
     create_profiles_table()
+    create_cleanings_table()
+    
+    
 
 def downgrade() -> None:
     op.drop_table("profiles")
