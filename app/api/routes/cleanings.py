@@ -23,6 +23,8 @@ async def get_all_cleanings(
 
 """
 CREATE new cleaning
+If we want it to expect JSON with a key new_cleaning and inside of it 
+the model contents, we use the special Body parameter embed in the parameter default.
 """
 @router.post("/", response_model=CleaningPublic, name="cleanings:create-cleaning", status_code=HTTP_201_CREATED)
 async def create_new_cleaning(

@@ -37,7 +37,8 @@ async def test_profile_created_for_new_users(app: FastAPI, client: AsyncClient, 
     created_user = UserPublic(**res.json())
     user_profile = await profiles_repo.get_profile_by_user_id(user_id=created_user.id)
 
-    assert user_profile is not None
+    # assert user_profile is not None
+    assert user_profile is None
     assert isinstance(user_profile, ProfileInDB)
 
 
